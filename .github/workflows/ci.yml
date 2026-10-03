@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test with coverage gate (>= 80% line)
+        run: >
+          dotnet test tests/Template.Api.Tests/Template.Api.Tests.csproj
+          -c Release
+          -p:CollectCoverage=true
+          -p:CoverletOutputFormat=cobertura
+          -p:Threshold=80
+          -p:ThresholdType=line
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t docker-dotnet-template:ci .
+
+      - name: Scan image with Trivy
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.trivy-cache:/root/.cache" \
+            aquasecurity/trivy:latest image \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            docker-dotnet-template:ci
